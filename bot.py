@@ -26,6 +26,9 @@ def getuserinfo(slack_user):
         return api_call['user']['name']
     return ""
 
+# def removeUser(slack_user, username=None):
+#
+
 def resetDate(channel, slack_user, date=None):
     if date is None:
         date = datetime.now()
@@ -39,7 +42,7 @@ def resetDate(channel, slack_user, date=None):
             username = getuserinfo(slack_user)
             cursor.execute('INSERT INTO counter VALUES (?, ?, ?)', [slack_user, date, username])
         db.commit()
-        sendmessage(channel, "Counter has been reset to {}".format(date.strftime("%Y-%m-%d")))
+        sendmessage(channel, "Counter has been set to {}".format(date.strftime("%Y-%m-%d")))
     except:
         print("Error resetting counter for: {}".format(slack_user))
 
@@ -54,23 +57,26 @@ def getcounterforuser(slack_user):
     finally:
         return val
 
+
 def gettotalcounter():
     """
     """
     val = 0
     response = ""
     try:
-        for userid, sdate in cursor.execute('SELECT userid, start_date FROM counter;'):
+        for username, sdate in cursor.execute('SELECT username, start_date FROM counter;'):
             days = (datetime.now() - sdate).days
-            response += getuserinfo(userid) + ": " + str(days) + "\n"
+            response += username + ": " + str(days) + "\n"
             val += days
     except:
         print("Error getting counter for: {}".format(slack_user))
     finally:
         return val, response
 
+
 def sendmessage(channel, message):
     return slack_client.api_call("chat.postMessage", channel=channel, text=message, as_user=True)
+
 
 def bot_help(channel, slack_user, args):
     """
@@ -81,7 +87,8 @@ def bot_help(channel, slack_user, args):
     *inspire*: Sends a motivational quote, to the channel.\n
     *counter reset*: Reset's the user counter, if a _date_ is provided, then to the date, otherwise, to the current date.
     Date Format: YYYY-dd-mm\n
-    *counter total* or *counter team*: Shows the whole teams current counters.\n
+    *counter total*: Show's only the team's total streak.
+    *counter team*: Shows the whole teams current counters.\n
     *counter show*: Shows the user's streak.\n
     *add*: Takes any number of args, and gives the sum.
     """
@@ -99,13 +106,13 @@ def inspire(channel, slack_user, args):
     sendmessage(channel, quote)
 
 
-
 def add(channel, slack_user, args):
     sum = 0
     for i in args:
         sum += int(i)
     response = "Sum: " + str(sum)
     sendmessage(channel, response)
+
 
 def counter(channel, slack_user, args):
     """
@@ -123,21 +130,26 @@ def counter(channel, slack_user, args):
             response = "Couldn't parse Date and time, please, provide it in the format YYYY-mm-dd"
             sendmessage(channel, response)
     elif args[0] == 'show':
-        response = "Counter at: " + str(getcounterforuser(slack_user))
+        response = "Your counter is at: " + str(getcounterforuser(slack_user))
         sendmessage(channel, response)
-    elif args[0] == 'team' or args[0] == 'total':
+    elif args[0] == 'team':
         value, response = gettotalcounter()
         r = "Total Streak: " + str(value) + "\n"
         r += response
         sendmessage(channel, r)
-
-    elif args[0] == 'set' | args[0] == 'add':
+    elif args[0] == 'total':
+        value, response = gettotalcounter()
+        r = "Total Streak: " + str(value) + "\n"
+        sendmessage(channel, r)
+    elif args[0] == 'set' or args[0] == 'add':
         try:
             d = datetime.strptime(args[1], "%Y-%m-%d")
             resetDate(channel, slack_user, d)
         except:
             response = "Couldn't parse Date and time, please, provide it in the format YYYY-mm-dd"
             sendmessage(channel, response)
+    # elif args[0] == 'remove':
+
 
 
 def handle_command(cmd, channel, slack_user, args):
@@ -151,6 +163,7 @@ def handle_command(cmd, channel, slack_user, args):
     else:
         response = "Unknown command. Use the *help* command, to give a list of commands."
         sendmessage(channel, response)
+
 
 def parse_slack_output(slack_rtm_output):
     """
