@@ -6,6 +6,15 @@ To run, you require Python 3. The dependencies are in the *requirements.txt*. To
     pip install -r requirements.txt
 
 
+Running
+=======
+
+To run, export, the following, environment variables:
+
+    export SLACK_BOT_TOKEN='your-slack-token'
+    export BOT_ID='bot-id'
+
+
 TODO:
 =====
 
