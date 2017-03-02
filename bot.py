@@ -131,7 +131,7 @@ def counter(channel, slack_user, args):
         r += response
         sendmessage(channel, r)
 
-    elif args[0] == 'set':
+    elif args[0] == 'set' | args[0] == 'add':
         try:
             d = datetime.strptime(args[1], "%Y-%m-%d")
             resetDate(channel, slack_user, d)
