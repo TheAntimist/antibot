@@ -1,4 +1,4 @@
-import os
+import os, signal
 import time
 from slackclient import SlackClient
 import sqlite3
@@ -20,58 +20,13 @@ slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
 db = None
 cursor = None
 
-def getuserinfo(slack_user):
-    api_call = slack_client.api_call("users.info", user=slack_user)
-    if api_call.get('ok'):
-        return api_call['user']['name']
-    return ""
-
-
-def removeUser(channel, slack_user, username=None):
-    """
-        If username given, then specific username is removed from the Counter table, else the slack_user is removed.
-    """
-
-    try:
-        r = "Removed counter for user: "
-        if username:
-            c = cursor.execute('DELETE from counter WHERE username=?', [username])
-            r += username
-
-        else:
-            c = cursor.execute('DELETE from counter WHERE userid=?', [slack_user])
-            r += "<@" + slack_user + ">"
-
-        db.commit()
-        sendmessage(channel, r)
-
-    except Exception as e:
-        print("Error, while deleting with exception: {}".format(str(e)))
-
-
-
-def resetDate(channel, slack_user, date=None):
-    if date is None:
-        date = datetime.now()
-
-    try:
-        c = cursor.execute('SELECT EXISTS(SELECT 1 FROM counter WHERE userid=? LIMIT 1);',
-                           [slack_user]).fetchone()[0]
-        if c:
-            cursor.execute('UPDATE counter SET start_date=? WHERE userid=?', [date, slack_user])
-        else:
-            username = getuserinfo(slack_user)
-            cursor.execute('INSERT INTO counter VALUES (?, ?, ?)', [slack_user, date, username])
-        db.commit()
-        sendmessage(channel, "Counter has been set to {}".format(date.strftime("%Y-%m-%d")))
-    except Exception as e:
-        print("Error resetting counter for: {}, with Exception: {}".format(slack_user, str(e)))
 
 def getcounterforuser(slack_user):
 
     val = 0
     try:
-        for row in cursor.execute('SELECT start_date FROM counter WHERE userid=? LIMIT 1;', [slack_user]):
+        for row in cursor.execute('SELECT start_date FROM counter WHERE userid=? LIMIT 1;',
+                                  [slack_user]):
             val = (datetime.utcnow() - row[0]).days
     except Exception as e:
             print("Error resetting counter for: {}, with Exception: {}".format(slack_user, str(e)))
@@ -79,23 +34,12 @@ def getcounterforuser(slack_user):
         return val
 
 
-def gettotalcounter():
-    """
-    """
-    val = 0
-    response = ""
-    try:
-        for username, sdate in cursor.execute('SELECT username, start_date FROM counter;'):
-            days = (datetime.utcnow() - sdate).days
-            response += username + ": " + str(days) + "\n"
-            val += days
-    except Exception as e:
-        print("Error resetting with Exception: {}".format(str(e)))
-    finally:
-        return val, response
-
-
 def sendmessage(channel, message):
+    """
+    Sends a message to the given channel.
+    :param channel: Channel to send message to.
+    :param message: Message to send.
+    """
     return slack_client.api_call("chat.postMessage", channel=channel, text=message, as_user=True)
 
 
@@ -116,6 +60,9 @@ def do(channel, slack_user, args):
     """
 
     """
+    response = "This does nothing. You aren't supposed to be here."
+    sendmessage(channel, response)
+
 def inspire(channel, slack_user, args):
     """
         Sends an inspirational message to the channel. Note, use pybrainyquote
@@ -139,41 +86,105 @@ def counter(channel, slack_user, args):
         Handles all the counter related commands.
     """
 
-    if args[0] == 'reset':
+    if not args:
+        return
+
+    if args[0] == 'reset' or args[0] == 'set' or args[0] == 'add':
+
+        def reset_date(channel, slack_user, date=None):
+            """
+                Resets date for given user, to the date provided or the current date.
+            """
+            if date is None:
+                date = datetime.utcnow()
+
+            try:
+                c = cursor.execute('SELECT EXISTS(SELECT 1 FROM counter WHERE userid=? LIMIT 1);',
+                                   [slack_user]).fetchone()[0]
+                if c:
+                    cursor.execute('UPDATE counter SET start_date=? WHERE userid=?', [date, slack_user])
+                else:
+
+                    def getuserinfo(slack_user):
+                        api_call = slack_client.api_call("users.info", user=slack_user)
+                        if api_call.get('ok'):
+                            return api_call['user']['name']
+                        return ""
+
+                    username = getuserinfo(slack_user)
+                    cursor.execute('INSERT INTO counter VALUES (?, ?, ?)', [slack_user, date, username])
+                db.commit()
+                sendmessage(channel, "Counter has been set to {}".format(date.strftime("%Y-%m-%d")))
+            except Exception as e:
+                print("Error resetting counter for: {}, with Exception: {}".format(slack_user, str(e)))
+
         try:
             if args[1:]:
                 d = datetime.strptime(args[1], "%Y-%m-%d")
-                resetDate(channel, slack_user, d)
+                reset_date(channel, slack_user, d)
             else:
-                resetDate(channel, slack_user)
+                reset_date(channel, slack_user)
         except Exception as e:
             print("Error while resetting, with exception {}".format(str(e)))
             response = "Couldn't parse Date and time, please, provide it in the format YYYY-mm-dd"
             sendmessage(channel, response)
+
     elif args[0] == 'show':
         response = "Your counter is at: " + str(getcounterforuser(slack_user))
         sendmessage(channel, response)
-    elif args[0] == 'team':
+
+    elif args[0] == 'team' or args[0] == 'total':
+
+        def gettotalcounter():
+            """
+                Retrieves the Counter for the whole team.
+            """
+            val = 0
+            response = ""
+            try:
+                for username, sdate in cursor.execute('SELECT username, start_date FROM counter;'):
+                    days = (datetime.utcnow() - sdate).days
+                    response += username + ": " + str(days) + "\n"
+                    val += days
+            except Exception as e:
+                print("Error resetting with Exception: {}".format(str(e)))
+            finally:
+                return val, response
+
         value, response = gettotalcounter()
         r = "Total Streak: " + str(value) + "\n"
-        r += response
+        if args[0] == 'team':
+            r += response
         sendmessage(channel, r)
-    elif args[0] == 'total':
-        value, response = gettotalcounter()
-        r = "Total Streak: " + str(value) + "\n"
-        sendmessage(channel, r)
-    elif args[0] == 'set' or args[0] == 'add':
-        try:
-            d = datetime.strptime(args[1], "%Y-%m-%d")
-            resetDate(channel, slack_user, d)
-        except:
-            response = "Couldn't parse Date and time, please, provide it in the format YYYY-mm-dd"
-            sendmessage(channel, response)
+
     elif args[0] == 'remove':
+
+        def remove_user(channel, slack_user, username=None):
+            """
+                If username given, then specific username is removed from the Counter table,
+                else the slack_user is removed.
+            """
+
+            try:
+                r = "Removed counter for user: "
+                if username:
+                    c = cursor.execute('DELETE from counter WHERE username=?', [username])
+                    r += username
+
+                else:
+                    c = cursor.execute('DELETE from counter WHERE userid=?', [slack_user])
+                    r += "<@" + slack_user + ">"
+
+                db.commit()
+                sendmessage(channel, r)
+
+            except Exception as e:
+                print("Error, while deleting with exception: {}".format(str(e)))
+
         if args[1:]:
-            removeUser(channel, slack_user, args[1])
+            remove_user(channel, slack_user, args[1])
         else:
-            removeUser(channel, slack_user)
+            remove_user(channel, slack_user)
 
 
 def handle_command(cmd, channel, slack_user, args):
@@ -204,13 +215,19 @@ def parse_slack_output(slack_rtm_output):
                 cmd = cmd.split()
                 return cmd[0], output['channel'], output['user'], cmd[1:]
     return None, None, None, None
+
+def onexit(*args):
+    print("In Signal Handler, closing all connections.")
+    db.close()
+    exit(0)
+
 helpd = {
     "help": "Gives a list of commands. To find a help on a specific command, use: " +
             "`help command`\nCurrent Command list:" +
             " `help`, `inspire`, `counter`, `add`, `up`",
     "inspire": "Sends a motivational quote, to the channel.\nUsage: `inspire`",
     "counter": "Super class of all counter related commands. Note, uses UTC time. " +
-               "Currently we have: `counter reset`, `counter remove`" +
+               "Currently we have: `counter reset`, `counter remove`, " +
                "`counter add`, `counter set`, `counter total`, `counter team`, `counter show`",
     "counter total": "Shows the whole teams current counters.\nUsage: `counter total`",
     "counter team": "Shows the whole teams current counters.\nUsage: `counter team`",
@@ -237,6 +254,8 @@ commands = {
     "up": up
 }
 
+signal.signal(signal.SIGTERM, onexit)
+
 try:
     if not os.path.exists("counter.db"):
         db = sqlite3.connect('counter.db', detect_types=sqlite3.PARSE_DECLTYPES)
@@ -262,6 +281,11 @@ if __name__ == "__main__":
                 time.sleep(READ_WEBSOCKET_DELAY)
         else:
             print("Connection failed. Invalid Slack token or bot ID?")
-    except (KeyboardInterrupt, SystemExit, ConnectionError):
-        print("Received Signal, shutting down.\n")
-        db.close()
+    except (KeyboardInterrupt, ConnectionError, TimeoutError):
+        print("\nReceived signal, Shutting down.")
+        onexit()
+    except Exception as e:
+        print("Caught Exception: {}\nShutting down.\n".format(str(e)))
+        onexit()
+        exit(1)  # Always fail?
+
