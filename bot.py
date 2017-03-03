@@ -26,8 +26,29 @@ def getuserinfo(slack_user):
         return api_call['user']['name']
     return ""
 
-# def removeUser(slack_user, username=None):
-#
+
+def removeUser(channel, slack_user, username=None):
+    """
+        If username given, then specific username is removed from the Counter table, else the slack_user is removed.
+    """
+
+    try:
+        r = "Removed counter for user: "
+        if username:
+            c = cursor.execute('DELETE from counter WHERE username=?', [username])
+            r += username
+
+        else:
+            c = cursor.execute('DELETE from counter WHERE userid=?', [slack_user])
+            r += "<@" + slack_user + ">"
+
+        db.commit()
+        sendmessage(channel, r)
+
+    except Exception as e:
+        print("Error, while deleting with exception: {}".format(str(e)))
+
+
 
 def resetDate(channel, slack_user, date=None):
     if date is None:
@@ -43,17 +64,17 @@ def resetDate(channel, slack_user, date=None):
             cursor.execute('INSERT INTO counter VALUES (?, ?, ?)', [slack_user, date, username])
         db.commit()
         sendmessage(channel, "Counter has been set to {}".format(date.strftime("%Y-%m-%d")))
-    except:
-        print("Error resetting counter for: {}".format(slack_user))
+    except Exception as e:
+        print("Error resetting counter for: {}, with Exception: {}".format(slack_user, str(e)))
 
 def getcounterforuser(slack_user):
 
     val = 0
     try:
         for row in cursor.execute('SELECT start_date FROM counter WHERE userid=? LIMIT 1;', [slack_user]):
-            val = (datetime.now() - row[0]).days
-    except:
-        print("Error getting counter for: {}".format(slack_user))
+            val = (datetime.utcnow() - row[0]).days
+    except Exception as e:
+            print("Error resetting counter for: {}, with Exception: {}".format(slack_user, str(e)))
     finally:
         return val
 
@@ -65,11 +86,11 @@ def gettotalcounter():
     response = ""
     try:
         for username, sdate in cursor.execute('SELECT username, start_date FROM counter;'):
-            days = (datetime.now() - sdate).days
+            days = (datetime.utcnow() - sdate).days
             response += username + ": " + str(days) + "\n"
             val += days
-    except:
-        print("Error getting counter for: {}".format(slack_user))
+    except Exception as e:
+        print("Error resetting with Exception: {}".format(str(e)))
     finally:
         return val, response
 
@@ -82,16 +103,13 @@ def bot_help(channel, slack_user, args):
     """
         Sends a reply, with all the current list of commands.
     """
-    response = """
-    *help*: Gives a list of commands. This is the command you are running.\n
-    *inspire*: Sends a motivational quote, to the channel.\n
-    *counter reset*: Reset's the user counter, if a _date_ is provided, then to the date, otherwise, to the current date.
-    Date Format: YYYY-dd-mm\n
-    *counter total*: Show's only the team's total streak.
-    *counter team*: Shows the whole teams current counters.\n
-    *counter show*: Shows the user's streak.\n
-    *add*: Takes any number of args, and gives the sum.
-    """
+    combined_args = ' '.join(args)
+    if len(args) == 0:
+        response = helpd["help"]
+    elif combined_args not in helpd:
+        response = "Command was not found on help."
+    else:
+        response = helpd[combined_args]
     sendmessage(channel, response)
 
 def do(channel, slack_user, args):
@@ -113,6 +131,8 @@ def add(channel, slack_user, args):
     response = "Sum: " + str(sum)
     sendmessage(channel, response)
 
+def up(channel, slack_user, args):
+    sendmessage(channel, BOT_NAME + " is up!")
 
 def counter(channel, slack_user, args):
     """
@@ -121,12 +141,13 @@ def counter(channel, slack_user, args):
 
     if args[0] == 'reset':
         try:
-            if len(args[1:]) != 0:
+            if args[1:]:
                 d = datetime.strptime(args[1], "%Y-%m-%d")
                 resetDate(channel, slack_user, d)
             else:
                 resetDate(channel, slack_user)
-        except:
+        except Exception as e:
+            print("Error while resetting, with exception {}".format(str(e)))
             response = "Couldn't parse Date and time, please, provide it in the format YYYY-mm-dd"
             sendmessage(channel, response)
     elif args[0] == 'show':
@@ -148,8 +169,11 @@ def counter(channel, slack_user, args):
         except:
             response = "Couldn't parse Date and time, please, provide it in the format YYYY-mm-dd"
             sendmessage(channel, response)
-    # elif args[0] == 'remove':
-
+    elif args[0] == 'remove':
+        if args[1:]:
+            removeUser(channel, slack_user, args[1])
+        else:
+            removeUser(channel, slack_user)
 
 
 def handle_command(cmd, channel, slack_user, args):
@@ -174,20 +198,43 @@ def parse_slack_output(slack_rtm_output):
     output_list = slack_rtm_output
     if output_list and len(output_list) > 0:
         for output in output_list:
-            if output and 'text' in output and AT_BOT in output['text']:
+            if output and 'text' in output and output['text'].startswith(AT_BOT):
                 # return text after the @ mention, whitespace removed
-                cmd = output['text'].split(AT_BOT)[1].strip().lower()
+                cmd = output['text'].replace(":", "").split(AT_BOT)[1].strip().lower()
                 cmd = cmd.split()
-                return cmd[0], \
-                       output['channel'], output['user'], cmd[1:]
+                return cmd[0], output['channel'], output['user'], cmd[1:]
     return None, None, None, None
+helpd = {
+    "help": "Gives a list of commands. To find a help on a specific command, use: " +
+            "`help command`\nCurrent Command list:" +
+            " `help`, `inspire`, `counter`, `add`, `up`",
+    "inspire": "Sends a motivational quote, to the channel.\nUsage: `inspire`",
+    "counter": "Super class of all counter related commands. Note, uses UTC time. " +
+               "Currently we have: `counter reset`, `counter remove`" +
+               "`counter add`, `counter set`, `counter total`, `counter team`, `counter show`",
+    "counter total": "Shows the whole teams current counters.\nUsage: `counter total`",
+    "counter team": "Shows the whole teams current counters.\nUsage: `counter team`",
+    "counter show": "Shows the user's streak.\nUsage: `counter show`",
+    "counter reset": "Reset's the user counter, if a _date_ is provided, then to the date, " +
+                     "otherwise, to the current date.\nUsage: `counter reset [YYYY-mm-dd]`",
+    "counter add": "Similar to `counter reset`, a convenient function for a user." +
+                   "\nUsage: `counter add [YYYY-mm-dd]`",
+    "counter set": "Similar to `counter reset`, a convenient function for a user." +
+                   "\nUsage: `counter set [YYYY-mm-dd]`",
+    "counter remove": "Removes the counter for the current user, or for the username " +
+                      "specified.\nUsage: `counter remove [username]`",
+    "up": "Responds with a message, stating if online, otherwise, there is no response.\nUsage: `up`",
+    "add": "Takes any number of args, and gives the sum.\nUsage: `add arg1 arg2 arg3 ...`"
+}
+
 
 commands = {
     "do": do,
     "inspire": inspire,
     "help": bot_help,
     "counter": counter,
-    "add": add
+    "add": add,
+    "up": up
 }
 
 try:
@@ -215,5 +262,6 @@ if __name__ == "__main__":
                 time.sleep(READ_WEBSOCKET_DELAY)
         else:
             print("Connection failed. Invalid Slack token or bot ID?")
-    except (KeyboardInterrupt, SystemExit):
+    except (KeyboardInterrupt, SystemExit, ConnectionError):
+        print("Received Signal, shutting down.\n")
         db.close()
