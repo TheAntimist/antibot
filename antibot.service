@@ -1,0 +1,16 @@
+[Unit]
+Description=Slackbot daemon
+After=network.target network-online.target
+
+[Service]
+Type=forking
+Environment="SLACK_BOT_TOKEN=your-slack-bot-token"
+Environment="BOT_ID=your-bot-id"
+WorkingDirectory=/home/pi/antibot/
+ExecStartPre=/bin/bash -c '/bin/date >> bot.log'
+ExecStart=/usr/bin/tmux new-session -s antibot -n bot -d '/usr/bin/python3 bot.py >> bot.log'
+ExecStop=/bin/bash -c "/usr/bin/tmux send-keys -t antibot:bot.0 C-c; sleep 1;"
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
