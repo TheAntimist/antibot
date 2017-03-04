@@ -1,4 +1,5 @@
-import os, signal
+import os
+import signal
 import time
 from slackclient import SlackClient
 import sqlite3
@@ -216,10 +217,15 @@ def parse_slack_output(slack_rtm_output):
                 return cmd[0], output['channel'], output['user'], cmd[1:]
     return None, None, None, None
 
-def onexit(*args):
+
+def onexit(passed_signal, frame=None):
     print("In Signal Handler, closing all connections.")
     db.close()
-    exit(0)
+    if passed_signal in [signal.SIGTERM, signal.SIGINT]: # Only exit cleanly is a SIGINT is passed
+        exit(0)
+    else:
+        exit(1)
+
 
 helpd = {
     "help": "Gives a list of commands. To find a help on a specific command, use: " +
@@ -255,6 +261,7 @@ commands = {
 }
 
 signal.signal(signal.SIGTERM, onexit)
+signal.signal(signal.SIGINT, onexit)
 
 try:
     if not os.path.exists("counter.db"):
@@ -281,11 +288,6 @@ if __name__ == "__main__":
                 time.sleep(READ_WEBSOCKET_DELAY)
         else:
             print("Connection failed. Invalid Slack token or bot ID?")
-    except (KeyboardInterrupt, ConnectionError, TimeoutError):
-        print("\nReceived signal, Shutting down.")
-        onexit()
-    except Exception as e:
+    except (Exception, ConnectionError, TimeoutError) as e:
         print("Caught Exception: {}\nShutting down.\n".format(str(e)))
-        onexit()
-        exit(1)  # Always fail?
-
+        onexit(signal.SIGKILL)
