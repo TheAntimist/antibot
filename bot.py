@@ -2,6 +2,7 @@ import os
 import signal
 import time
 from slackclient import SlackClient
+from slackclient._client import SlackNotConnected
 import sqlite3
 from datetime import datetime
 from brainyquote import pybrainyquote
@@ -218,13 +219,16 @@ def parse_slack_output(slack_rtm_output):
     return None, None, None, None
 
 
-def onexit(passed_signal, frame=None):
+def onexit(passed_signal, frame=None, exit_code=None):
     print("In Signal Handler, closing all connections.")
     db.close()
     if passed_signal in [signal.SIGTERM, signal.SIGINT]: # Only exit cleanly is a SIGINT is passed
         exit(0)
     else:
-        exit(1)
+        if exit_code:
+            exit(exit_code)
+        else:
+            exit(exit_code)
 
 
 helpd = {
@@ -288,6 +292,11 @@ if __name__ == "__main__":
                 time.sleep(READ_WEBSOCKET_DELAY)
         else:
             print("Connection failed. Invalid Slack token or bot ID?")
-    except (Exception, ConnectionError, TimeoutError) as e:
-        print("Caught Exception: {}\nShutting down.\n".format(str(e)))
+            raise ConnectionError("Connect Failed.")
+
+    except (ConnectionError, TimeoutError, SlackNotConnected) as e:
+        print("Caught Exception: {}. Shutting down.".format(str(e)))
+        onexit(signal.SIGKILL, exit_code=23)
+    except Exception as e:
+        print("Caught Exception: {}. Shutting down.".format(str(e)))
         onexit(signal.SIGKILL)
