@@ -23,8 +23,10 @@ db = None
 cursor = None
 
 
-def getcounterforuser(slack_user):
-
+def get_counter_for_user(slack_user):
+    """
+        Returns the counter for the given user
+    """
     val = 0
     try:
         for row in cursor.execute('SELECT start_date FROM counter WHERE userid=? LIMIT 1;',
@@ -35,6 +37,111 @@ def getcounterforuser(slack_user):
     finally:
         return val
 
+def rank_command(channel, slack_user, args):
+    """
+        Sends a message to the channel with the rank of the user.
+    """
+    days = get_counter_for_user(slack_user)
+    r, r_str = get_rank_for_user(days)
+    response = "You are at Rank " + str(r) + " with the title " + r_str
+    sendmessage(channel, response)
+
+def get_rank_for_user(days, prefix="", suffix=""):
+    """
+        Returns the rank, for the specific days in a range.
+    """
+
+    rank_string = ""
+    rank = 0
+    if days == 0:
+        rank_string = "Private"
+        rank = 1
+    elif days == 1:
+        rank_string = "Private 2"
+        rank = 2
+    elif 2 <= days <= 4:
+        rank_string = "Private First Class"
+        rank = 3
+    elif 4 < days <= 8:
+        rank_string = "Specialist"
+        rank = 4
+    elif 8 < days <= 12:
+        rank_string = "Corporal"
+        rank = 5
+    elif 12 < days <= 18:
+        rank = 6
+        rank_string = "Sergeant"
+    elif 18 < days <= 24:
+        rank = 7
+        rank_string = "Staff Sergeant"
+    elif 24 < days <= 32:
+        rank_string = "Sergeant First Class"
+        rank = 8
+    elif 32 < days <= 40:
+        rank_string = "Master Sergeant"
+        rank = 9
+    elif 40 < days <= 50:
+        rank_string = "First Sergeant"
+        rank = 10
+    elif 50 < days <= 60:
+        rank_string = "Sergeant Major"
+        rank = 11
+    elif 60 < days <= 72:
+        rank_string = "Command Sergeant Major"
+        rank = 12
+    elif 72 < days <= 84:
+        rank_string = "Sergeant Major of the Army"
+        rank = 13
+    elif 84 < days <= 98:
+        rank_string = "Warrant Officer"
+        rank = 14
+    elif 98 < days <= 112:
+        rank_string = "Chief Warrant Officer 2"
+        rank = 15
+    elif 112 < days <= 128:
+        rank_string = "Chief Warrant Officer 3"
+        rank = 16
+    elif 128 < days <= 144:
+        rank_string = "Chief Warrant Officer 4"
+        rank = 17
+    elif 144 < days <= 162:
+        rank_string = "Chief Warrant Officer 5"
+        rank = 18
+    elif 162 < days <= 180:
+        rank_string = "Second Lieutenant"
+        rank = 19
+    elif 180 < days <= 200:
+        rank_string = "First Lieutenant"
+        rank = 20
+    elif 200 < days <= 220:
+        rank_string = "Captain"
+        rank = 21
+    elif 220 < days <= 242:
+        rank_string = "Major"
+        rank = 22
+    elif 242 < days <= 264:
+        rank_string = "Lieutenant Colonel"
+        rank = 23
+    elif 264 < days <= 288:
+        rank_string = "Colonel"
+        rank = 24
+    elif 288 < days <= 312:
+        rank_string = "Brigadier General"
+        rank = 25
+    elif 312 < days <= 338:
+        rank_string = "Major General"
+        rank = 26
+    elif 338 < days <= 364:
+        rank_string = "Lieutenant General"
+        rank = 27
+    elif 364 < days <= 392:
+        rank_string = "General"
+        rank = 28
+    elif days > 392:
+        rank_string = "General of the Army"
+        rank = 29
+
+    return rank, prefix + rank_string + suffix
 
 def sendmessage(channel, message):
     """
@@ -132,7 +239,7 @@ def counter(channel, slack_user, args):
             sendmessage(channel, response)
 
     elif args[0] == 'show':
-        response = "Your counter is at: " + str(getcounterforuser(slack_user))
+        response = "Your counter is at: " + str(get_counter_for_user(slack_user))
         sendmessage(channel, response)
 
     elif args[0] == 'team' or args[0] == 'total':
@@ -146,7 +253,8 @@ def counter(channel, slack_user, args):
             try:
                 for username, sdate in cursor.execute('SELECT username, start_date FROM counter;'):
                     days = (datetime.utcnow() - sdate).days
-                    response += username + ": " + str(days) + "\n"
+                    r, r_str = get_rank_for_user(days, "[", "] ")
+                    response += r_str + username + ": " + str(days) + "\n"
                     val += days
             except Exception as e:
                 print("Error resetting with Exception: {}".format(str(e)))
@@ -219,16 +327,14 @@ def parse_slack_output(slack_rtm_output):
     return None, None, None, None
 
 
-def onexit(passed_signal, frame=None, exit_code=None):
+def onexit(passed_signal, frame=None, exit_code=1):
     print("In Signal Handler, closing all connections.")
     db.close()
-    if passed_signal in [signal.SIGTERM, signal.SIGINT]: # Only exit cleanly is a SIGINT is passed
+    if passed_signal in [signal.SIGTERM, signal.SIGINT]:
+        # Only exit cleanly if a SIGINT, SIGTERM is passed
         exit(0)
     else:
-        if exit_code:
-            exit(exit_code)
-        else:
-            exit(exit_code)
+        exit(exit_code)
 
 
 helpd = {
@@ -261,7 +367,8 @@ commands = {
     "help": bot_help,
     "counter": counter,
     "add": add,
-    "up": up
+    "up": up,
+    "rank": rank_command
 }
 
 signal.signal(signal.SIGTERM, onexit)
