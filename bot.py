@@ -6,6 +6,8 @@ from slackclient._client import SlackNotConnected
 import sqlite3
 from datetime import datetime
 from brainyquote import pybrainyquote
+from threading import Timer
+from functools import partial
 
 # starterbot's ID as an environment variable
 BOT_ID = os.environ.get("BOT_ID")
@@ -13,7 +15,7 @@ BOT_ID = os.environ.get("BOT_ID")
 # constants
 AT_BOT = "<@" + BOT_ID + ">"
 BOT_NAME = 'antibot'
-
+DEFAULT_DELETE_DELAY = 180.0 #seconds
 
 # instantiate Slack client
 slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
@@ -46,7 +48,8 @@ def rank_command(channel, slack_user, args):
     response = "You are at Rank " + str(r) + " with the title " + r_str
     sendmessage(channel, response)
 
-def get_rank_for_user(days, prefix="", suffix=""):
+
+def get_rank_for_user(days):
     """
         Returns the rank, for the specific days in a range.
     """
@@ -141,16 +144,27 @@ def get_rank_for_user(days, prefix="", suffix=""):
         rank_string = "General of the Army"
         rank = 29
 
-    return rank, prefix + rank_string + suffix
+    return rank, rank_string
 
-def sendmessage(channel, message):
+
+def sendmessage(channel, message, delete_delay=DEFAULT_DELETE_DELAY):
     """
     Sends a message to the given channel.
     :param channel: Channel to send message to.
     :param message: Message to send.
+    :param delete_delay: Delay in seconds for when the message has to be deleted.
+            Default delay is 2 minutes.
     """
-    return slack_client.api_call("chat.postMessage", channel=channel, text=message, as_user=True)
+    status = slack_client.api_call("chat.postMessage", channel=channel, text=message, as_user=True)
 
+    if delete_delay != 0 and status["ok"] == True:
+        Timer(delete_delay, partial(delete_message, channel, status['message']['ts'])).start()
+
+def delete_message(channel, ts):
+    """
+        Deletes a message with a specific ts value on the channel.
+    """
+    return slack_client.api_call("chat.delete", channel=channel, ts=ts)
 
 def bot_help(channel, slack_user, args):
     """
@@ -177,7 +191,7 @@ def inspire(channel, slack_user, args):
         Sends an inspirational message to the channel. Note, use pybrainyquote
     """
     quote = pybrainyquote.get_quotes('motivational')[0]
-    sendmessage(channel, quote)
+    sendmessage(channel, quote, delete_delay=0)
 
 
 def add(channel, slack_user, args):
@@ -198,7 +212,11 @@ def counter(channel, slack_user, args):
     if not args:
         return
 
-    if args[0] == 'reset' or args[0] == 'set' or args[0] == 'add':
+    if args[0] == 'show' or not args:
+        response = "Your counter is at: " + str(get_counter_for_user(slack_user))
+        sendmessage(channel, response)
+
+    elif args[0] == 'reset' or args[0] == 'set' or args[0] == 'add':
 
         def reset_date(channel, slack_user, date=None):
             """
@@ -238,10 +256,6 @@ def counter(channel, slack_user, args):
             response = "Couldn't parse Date and time, please, provide it in the format YYYY-mm-dd"
             sendmessage(channel, response)
 
-    elif args[0] == 'show':
-        response = "Your counter is at: " + str(get_counter_for_user(slack_user))
-        sendmessage(channel, response)
-
     elif args[0] == 'team' or args[0] == 'total':
 
         def gettotalcounter():
@@ -253,8 +267,8 @@ def counter(channel, slack_user, args):
             try:
                 for username, sdate in cursor.execute('SELECT username, start_date FROM counter;'):
                     days = (datetime.utcnow() - sdate).days
-                    r, r_str = get_rank_for_user(days, "[", "] ")
-                    response += r_str + username + ": " + str(days) + "\n"
+                    r, r_str = get_rank_for_user(days)
+                    response += "[" + r_str + "] " + username + ": " + str(days) + "\n"
                     val += days
             except Exception as e:
                 print("Error resetting with Exception: {}".format(str(e)))
@@ -343,7 +357,8 @@ helpd = {
             " `help`, `inspire`, `counter`, `add`, `up`",
     "inspire": "Sends a motivational quote, to the channel.\nUsage: `inspire`",
     "counter": "Super class of all counter related commands. Note, uses UTC time. " +
-               "Currently we have: `counter reset`, `counter remove`, " +
+               "If no command provided, then is `show` by default. Currently we have: " +
+               "`counter reset`, `counter remove`, " +
                "`counter add`, `counter set`, `counter total`, `counter team`, `counter show`",
     "counter total": "Shows the whole teams current counters.\nUsage: `counter total`",
     "counter team": "Shows the whole teams current counters.\nUsage: `counter team`",
@@ -357,7 +372,8 @@ helpd = {
     "counter remove": "Removes the counter for the current user, or for the username " +
                       "specified.\nUsage: `counter remove [username]`",
     "up": "Responds with a message, stating if online, otherwise, there is no response.\nUsage: `up`",
-    "add": "Takes any number of args, and gives the sum.\nUsage: `add arg1 arg2 arg3 ...`"
+    "add": "Takes any number of args, and gives the sum.\nUsage: `add arg1 arg2 arg3 ...`",
+    "rank": "Returns the rank and the title of the user.\nUsage: `rank`"
 }
 
 

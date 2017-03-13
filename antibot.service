@@ -8,8 +8,10 @@ Environment="SLACK_BOT_TOKEN=your-slack-token"
 Environment="BOT_ID=your-bot-id"
 WorkingDirectory=/home/pi/antibot/
 ExecStart=/usr/bin/python3 bot.py
-SuccessExitStatus=0
 Restart=on-failure
+RestartSec=600
+# RestartPreventExitStatus=23 
+StandardOutput=syslog+console
 
 [Install]
 WantedBy=default.target
