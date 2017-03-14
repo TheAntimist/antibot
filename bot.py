@@ -209,10 +209,7 @@ def counter(channel, slack_user, args):
         Handles all the counter related commands.
     """
 
-    if not args:
-        return
-
-    if args[0] == 'show' or not args:
+    if not args or args[0] == 'show':
         response = "Your counter is at: " + str(get_counter_for_user(slack_user))
         sendmessage(channel, response)
 
@@ -337,7 +334,9 @@ def parse_slack_output(slack_rtm_output):
                 # return text after the @ mention, whitespace removed
                 cmd = output['text'].replace(":", "").split(AT_BOT)[1].strip().lower()
                 cmd = cmd.split()
-                return cmd[0], output['channel'], output['user'], cmd[1:]
+                if cmd:
+                    return cmd[0], output['channel'], output['user'], cmd[1:]
+
     return None, None, None, None
 
 
