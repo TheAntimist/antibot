@@ -3,6 +3,7 @@ slackclient.pdf
 counter.db
 
 .idea/
+__pycache__/
 
 *.iml
 *.iws
