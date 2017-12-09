@@ -16,3 +16,4 @@ CHECKIN_FREQ_DAYS = 7 # Number of days between check-ins
 RELAPSE_POINTS = -5
 PER_DAY_POINTS = 1
 BUFFER_DAYS_TEAM = timedelta(days=7)
+SKIRMISH_NOADMIN_FUNCTIONS = ["players", "details"]

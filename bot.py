@@ -1,7 +1,6 @@
 import signal
 import time
 from constants import *
-from slackclient._client import SlackNotConnected
 from functions import *
 import globals as g
 
@@ -173,7 +172,7 @@ if __name__ == "__main__":
             print("Connection failed. Invalid Slack token or bot ID?")
             raise ConnectionError("Connect Failed.")
 
-    except (ConnectionError, TimeoutError, SlackNotConnected) as e:
+    except (ConnectionError, TimeoutError) as e:
         print("Caught Exception: {}. Shutting down.".format(str(e)))
         onexit(signal.SIGKILL, exit_code=23)
     except Exception as e:

@@ -1,14 +1,12 @@
 from threading import Timer
-from re import match
 from datetime import datetime, timedelta
 from brainyquote import pybrainyquote
 from constants import DEFAULT_DELETE_DELAY, BOT_NAME, BOT_ID, RELAPSE_POINTS,\
-    CHECKIN_FREQ_DAYS, BUFFER_DAYS_TEAM, PER_DAY_POINTS
+    CHECKIN_FREQ_DAYS, BUFFER_DAYS_TEAM, PER_DAY_POINTS, SKIRMISH_NOADMIN_FUNCTIONS
 import globals as g
 from functools import partial
 
 # Admin handling code
-
 
 def updateadmins(channel, slack_user, args):
     """
@@ -28,6 +26,7 @@ def updateadmins(channel, slack_user, args):
             sendmessage(channel=channel, message="Updated the admin list.")
         except Exception as e:
             print('Error updating admins.')
+            sendmessage(channel, 'Error updating admins.')
 
 
 def checkadmin(slack_user):
@@ -90,13 +89,15 @@ def skirmish(channel, slack_user, args):
     """
     Parent of all the skirmish functions. 
     """
-    if not checkadmin(slack_user):
+    if args and args[0] in SKIRMISH_NOADMIN_FUNCTIONS:
+        pass
+    elif not checkadmin(slack_user):
         sendmessage(channel=channel, message="You are not an admin, thus you don't have skirmish controls")
         return
 
     if not args or args[0] == 'details':
         start_date, end_date = skirmish_dates()
-        if start_date and end_date and start_date <= datetime.utcnow().date() <= end_date:
+        if start_date and end_date:
             r = 'Current skirmish is going on for the period of {} to {}'\
                 .format(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
             sendmessage(channel, r)
@@ -111,6 +112,9 @@ def skirmish(channel, slack_user, args):
 
         try:
             names = get_list_of_usernames(args[1:])
+            if not names:
+                sendmessage(channel, 'Unable to add to the skirmish, no user[s] found.')
+                return
             per_name = '( ?, NULL, 0, \''+ start_date.isoformat() + '\')'
             sql_str = ', '.join(per_name for _ in names)
 
@@ -118,7 +122,9 @@ def skirmish(channel, slack_user, args):
             g.db.commit()
             sendmessage(channel, 'Added to the skirmish.')
         except Exception as e:
-            print('Error adding to skirmish')
+            print('Error adding to skirmish. Extra vars: names: {}'.format(names))
+            sendmessage(channel, 'Error adding to skirmish')
+
     elif args[0] == 'start':
         def skirmish_start(channel, slack_user, start_date=None, end_date=None):
             """
@@ -141,6 +147,7 @@ def skirmish(channel, slack_user, args):
                             .format(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
             except Exception as e:
                 print('Error in creating Skirmish')
+                sendmessage(channel, 'Error in creating Skirmish')
 
         try:
             start = datetime.strptime(args[1], "%Y-%m-%d").date()
@@ -165,6 +172,7 @@ def skirmish(channel, slack_user, args):
                 sendmessage(channel, 'Ending skirmish. Removing all related data.')
             except Exception as e:
                 print('Error in deleting skirmish related content.')
+                sendmessage(channel, 'Error in deleting skirmish related content.')
 
         skirmish_end(channel)
     elif args[0] == 'remove':
@@ -178,9 +186,10 @@ def skirmish(channel, slack_user, args):
 
             g.cursor.execute('DELETE FROM sk_pinfo WHERE username IN ({0})'.format(sql_str), names)
             g.db.commit()
-            sendmessage(channel, 'Removed ' + sql_str + ' from the skirmish')
+            sendmessage(channel, 'Removed {} from the skirmish'.format(', '.join(name for name in names)))
         except Exception as e:
             print('Error removing from team')
+            sendmessage(channel, 'Error removing from team')
     elif args[0] == 'players':
         if not skirmish_exists():
             sendmessage(channel, "No skirmish is currently planned.")
@@ -194,6 +203,7 @@ def skirmish(channel, slack_user, args):
             sendmessage(channel, str[:-1])
         except Exception as e:
             print('Error in fetching skirmish player list.')
+            sendmessage(channel, 'Error in fetching skirmish player list.')
     elif args[0] == 'team':
         if not skirmish_exists():
             sendmessage(channel, "No skirmish is currently planned.")
@@ -212,6 +222,7 @@ def skirmish(channel, slack_user, args):
                     sendmessage(channel, str[:-1])
             except Exception as e:
                 print('Error in fetching team list.')
+                sendmessage(channel, 'Error in fetching team list.')
         elif args[1] == 'add':
             try:
                 g.cursor.execute('INSERT INTO teams VALUES (?, 1)', [args[2]])
@@ -220,6 +231,7 @@ def skirmish(channel, slack_user, args):
             except Exception as e:
                 r = 'Error adding team to skirmish.'
                 sendmessage(channel, r)
+                print(r)
         elif args[1] == 'remove':
             try:
                 g.cursor.execute('DELETE FROM teams WHERE name=?', [args[2]])
@@ -227,6 +239,7 @@ def skirmish(channel, slack_user, args):
                 sendmessage(channel, 'Team {}, removed to skirmish'.format(args[2]))
             except Exception as e:
                 print('Error removing team to skirmish.')
+                sendmessage(channel, 'Error removing team to skirmish.')
 
 
 
@@ -251,6 +264,7 @@ def teams(channel, slack_user, args):
                 sendmessage(channel, str[:-1])
         except Exception as e:
             print('Error in fetching team list.')
+            sendmessage(channel, 'Error in fetching team list.')
     elif args[0] == 'players':
         try:
             str = 'Teams:\n'
@@ -262,7 +276,8 @@ def teams(channel, slack_user, args):
 
             sendmessage(channel, str[:-1])
         except Exception as e:
-            print('Error in fetching team playerslist.')
+            print('Error in fetching team players list.')
+            sendmessage(channel, 'Error in fetching team players list.')
     elif args[0] == 'add':
         if not args[2:]: # Nothing after the team name
             return
@@ -276,6 +291,7 @@ def teams(channel, slack_user, args):
             g.db.commit()
         except Exception as e:
             print('Error adding to team')
+            sendmessage(channel, 'Error adding to team')
     elif args[0] == 'remove':
         if not args[2:]:
             return
@@ -288,6 +304,7 @@ def teams(channel, slack_user, args):
             g.db.commit()
         except Exception as e:
             print('Error adding to team')
+            sendmessage(channel, 'Error adding to team')
     elif args[0] == 'score':
         score_str = team_score()
         if score_str:
@@ -468,9 +485,8 @@ def getuserid(user_text):
     """
     :return the userid if the text is of the form: '<@USERID>' else return None
     """
-    userid = match('<@(\S+)>', user_text)
-    if userid:
-        return userid[1]
+    if user_text[0:2] == "<@" and user_text[-1] == ">":
+        return user_text[2:-1]
     else:
         return None
 
